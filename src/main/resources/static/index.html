@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LuKiNey - Gestão de Cardápio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class', theme: { extend: { colors: {
+      resto: { orange: '#f97316', hover: '#fb923c', black: '#0c0a09', dark: '#1c1917',
+        card: '#262626', cardHover: '#323232', border: '#404040', subtext: '#a8a29e' }
+    }}}};
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family:'Plus Jakarta Sans',sans-serif;background:#0c0a09;color:white; }
+    .hero { background:linear-gradient(180deg,#451a03 0%,#1c1917 100%); }
+    .modal { background:rgba(28,25,23,.97);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.1); }
+  </style>
+</head>
+<body class="bg-resto-black text-white min-h-screen">
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo}=React;
+
+const Icons={
+  Utensils:({size=24})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 2v6a3 3 0 0 1-3 3 3 3 0 0 1-3-3V2"/><path d="M15 2v18"/><path d="M12 2v6"/><path d="M7 2v20"/><path d="M3 2v6a4 4 0 0 0 4 4 4 4 0 0 0 4-4V2"/></svg>,
+  Plus:({size=18})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>,
+  Search:({size=18})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>,
+  Home:({size=20})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>
+};
+
+const EMPTY_PRATO={nome:'',categoria:'PRATO_PRINCIPAL',preco:'',tempoPreparo:'',quantidadeEstoque:'',disponivel:true,ingredientes:'',descricao:''};
+
+function App(){
+  const [tela,setTela]=useState('principal');
+  const [apiUrl,setApiUrl]=useState('http://localhost:8080/api/pratos');
+  const [urlEdit,setUrlEdit]=useState(apiUrl);
+  const [showConfig,setShowConfig]=useState(false);
+  const [statusApi,setStatusApi]=useState('carregando');
+  const [erroDetalhe,setErroDetalhe]=useState('');
+  
+  const [pratos,setPratos]=useState([]);
+  const [busca,setBusca]=useState('');
+  const [filtro,setFiltro]=useState('TODOS');
+  
+  const [formPrato,setFormPrato]=useState(EMPTY_PRATO);
+  const [toast,setToast]=useState(null);
+  const [carregando,setCarregando]=useState(false);
+
+  const avisar=(mensagem,tipo='info')=>{setToast({mensagem,tipo});setTimeout(()=>setToast(null),3800)};
+
+  const request=async(endpoint='',options={})=>{
+    const res=await fetch(`${apiUrl.replace(/\/$/,'')}${endpoint}`,options);
+    if(!res.ok) throw new Error(`A API respondeu com status ${res.status}`);
+    if(res.status===204)return null;
+    const text=await res.text(); return text?JSON.parse(text):null;
+  };
+
+  const carregarDados=async()=>{
+    setCarregando(true);
+    setErroDetalhe('');
+    try{
+      const dadosPratos=await request();
+      setPratos(Array.isArray(dadosPratos)?dadosPratos:(dadosPratos?[dadosPratos]:[]));
+      setStatusApi('conectado');
+    }catch(e){
+      setStatusApi('erro');
+      setErroDetalhe(e.message||'Não foi possível conectar à API.');
+    }
+    finally{setCarregando(false);}
+  };
+
+  useEffect(()=>{carregarDados()},[apiUrl]);
+
+  const salvarPrato=async(e)=>{
+    e.preventDefault();
+    const dados={
+      ...formPrato,
+      preco:formPrato.preco===''?null:Number(formPrato.preco),
+      tempoPreparo:formPrato.tempoPreparo===''?null:Number(formPrato.tempoPreparo),
+      quantidadeEstoque:formPrato.quantidadeEstoque===''?0:Number(formPrato.quantidadeEstoque)
+    };
+    try{
+      await request('',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)});
+      avisar('Prato cadastrado com sucesso!','sucesso');
+      setFormPrato(EMPTY_PRATO);
+      setTela('principal');
+      await carregarDados();
+    }catch(err){
+      avisar(`Erro ao salvar prato: ${err.message}`,'erro');
+    }
+  };
+
+  const pratosFiltrados = useMemo(() => {
+    return pratos.filter(p => {
+      const texto = [p.nome, p.categoria, p.ingredientes, p.descricao].filter(Boolean).join(' ').toLowerCase();
+      return texto.includes(busca.toLowerCase()) && (filtro==='TODOS' || p.categoria===filtro);
+    });
+  }, [pratos, busca, filtro]);
+
+  const field='w-full bg-neutral-900 border border-resto-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-orange-500 transition';
+  const label='block text-resto-subtext font-bold mb-1.5 uppercase tracking-wider text-[10px]';
+
+  return <div className="flex min-h-screen bg-resto-black text-white">
+    {toast&&<div className={`fixed top-5 right-5 z-[70] px-4 py-3 rounded-xl text-xs font-semibold shadow-2xl border ${toast.tipo==='sucesso'?'bg-neutral-900 text-orange-400 border-orange-500/40':toast.tipo==='erro'?'bg-neutral-900 text-rose-400 border-rose-500/40':'bg-neutral-900 text-white border-neutral-700'}`}>{toast.mensagem}</div>}
+    
+    {/* Sidebar */}
+    <aside className="w-64 bg-black p-5 hidden md:flex flex-col justify-between border-r border-neutral-900">
+      <div className="space-y-8">
+        <div className="flex items-center gap-3 px-2">
+          <span className="text-orange-500"><Icons.Utensils size={30}/></span>
+          <span className="text-2xl font-extrabold tracking-tight">LuKi<span className="text-orange-500">Ney</span></span>
+        </div>
+        <nav className="space-y-2">
+          <button onClick={()=>setTela('principal')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-bold ${tela==='principal'?'bg-resto-cardHover text-orange-500':'text-resto-subtext hover:text-white'}`}>
+            <Icons.Home/> Cardápio
+          </button>
+          <button onClick={()=>{setFormPrato(EMPTY_PRATO);setTela('cadastro');}} className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-bold ${tela==='cadastro'?'bg-resto-cardHover text-orange-500':'text-resto-subtext hover:text-white'}`}>
+            <Icons.Plus/> Cadastrar Prato
+          </button>
+        </nav>
+      </div>
+      <div className="bg-resto-dark p-3 rounded-xl border border-resto-border">
+        <span className="text-resto-subtext block text-[10px] uppercase font-bold mb-1">API Backend</span>
+        <div className="text-[11px] font-mono break-all mb-3">{apiUrl}</div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 text-xs">
+            <span className={`w-2 h-2 rounded-full ${statusApi==='conectado'?'bg-orange-500':statusApi==='carregando'?'bg-amber-400':'bg-rose-500'}`}></span>
+            {statusApi==='conectado'?'Conectada':statusApi==='carregando'?'Conectando':'Erro'}
+          </span>
+          <button onClick={()=>{setUrlEdit(apiUrl);setShowConfig(true)}} className="text-xs text-orange-400 hover:underline">Alterar</button>
+        </div>
+      </div>
+    </aside>
+
+    <main className="flex-1 min-w-0">
+      <header className="sticky top-0 z-30 bg-black/90 backdrop-blur border-b border-neutral-900 px-5 md:px-8 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 md:hidden">
+          <span className="text-orange-500"><Icons.Utensils size={26}/></span>
+          <b className="text-xl tracking-tight">LuKi<span className="text-orange-500">Ney</span></b>
+        </div>
+        <div className="hidden md:block text-xs text-resto-subtext">SISTEMA RESTAURANTE / <span className="text-white uppercase">{tela==='cadastro'?'CADASTRO DE PRATO':'VISUALIZAÇÃO DO CARDÁPIO'}</span></div>
+        <div className="flex gap-2">
+          <button onClick={()=>carregarDados()} className="px-3 py-2 rounded-full border border-resto-border text-xs font-bold hover:bg-resto-card">
+            {carregando?'Atualizando...':'↻ Atualizar'}
+          </button>
+          <button onClick={()=>{setFormPrato(EMPTY_PRATO);setTela('cadastro');}} className="flex items-center gap-2 px-4 py-2 rounded-full bg-orange-500 text-black text-xs font-extrabold hover:bg-orange-400">
+            <Icons.Plus/> Novo Prato
+          </button>
+        </div>
+      </header>
+
+      <div className="p-5 md:p-8 max-w-7xl mx-auto">
+        {tela==='principal' ? (
+          <>
+            <section className="hero rounded-2xl p-7 md:p-10 mb-7 border border-orange-900/40">
+              <p className="text-orange-400 text-xs uppercase tracking-[.25em] font-extrabold mb-3">Gestão LuKiNey</p>
+              <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-3">Cardápio e itens <span className="text-orange-500">cadastrados.</span></h1>
+              <p className="text-resto-subtext max-w-xl text-sm leading-6">Veja os pratos salvos no seu banco de dados via Spring Boot.</p>
+            </section>
+
+            {statusApi==='erro'&&<div className="mb-5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm"><b className="text-rose-300">Não foi possível conectar à API.</b><p className="text-resto-subtext mt-1">{erroDetalhe}</p><p className="text-resto-subtext mt-1">Confira se a API Spring Boot está rodando em <code>http://localhost:8080/api/pratos</code>.</p><button onClick={()=>{setUrlEdit(apiUrl);setShowConfig(true)}} className="mt-3 text-orange-400 font-bold hover:underline">Configurar endpoint</button></div>}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-7">
+              <div className="bg-resto-card border border-resto-border rounded-xl p-5">
+                <p className="text-resto-subtext text-xs font-bold uppercase">Total de Pratos</p>
+                <p className="text-3xl font-extrabold mt-2">{pratos.length}</p>
+              </div>
+              <div className="bg-resto-card border border-resto-border rounded-xl p-5">
+                <p className="text-resto-subtext text-xs font-bold uppercase">Disponíveis para Venda</p>
+                <p className="text-3xl font-extrabold mt-2 text-orange-400">{pratos.filter(p=>p.disponivel).length}</p>
+              </div>
+            </div>
+
+            {/* Busca e Filtro */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+              <div className="flex-1 relative">
+                <input 
+                  type="text" 
+                  placeholder="Buscar prato por nome ou ingrediente..." 
+                  value={busca} 
+                  onChange={e=>setBusca(e.target.value)} 
+                  className="w-full bg-resto-card border border-resto-border rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-orange-500"
+                />
+                <span className="absolute left-3 top-3.5 text-resto-subtext"><Icons.Search size={18}/></span>
+              </div>
+              <select value={filtro} onChange={e=>setFiltro(e.target.value)} className="bg-resto-card border border-resto-border rounded-xl px-4 py-3 text-sm outline-none">
+                <option value="TODOS">Todas as categorias</option>
+                <option value="ENTRADA">Entradas</option>
+                <option value="PRATO_PRINCIPAL">Pratos Principais</option>
+                <option value="SOBREMESA">Sobremesas</option>
+                <option value="BEBIDA">Bebidas</option>
+                <option value="ACOMPANHAMENTO">Acompanhamentos</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {carregando && pratos.length === 0 ? (
+                <p className="text-resto-subtext col-span-full text-center py-10">Carregando pratos...</p>
+              ) : pratosFiltrados.length === 0 ? (
+                <div className="bg-resto-card border border-resto-border rounded-2xl p-10 col-span-full text-center">
+                  <p className="text-resto-subtext text-sm">Nenhum prato encontrado.</p>
+                  <button onClick={()=>{setFormPrato(EMPTY_PRATO);setTela('cadastro');}} className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-500 text-black px-5 py-2.5 font-extrabold text-xs">
+                    <Icons.Plus/> Cadastrar Primeiro Prato
+                  </button>
+                </div>
+              ) : (
+                pratosFiltrados.map((p,i)=>(
+                  <article key={p.id??i} className="bg-resto-card border border-resto-border rounded-2xl p-5 hover:bg-resto-cardHover transition">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex gap-3 min-w-0">
+                        <div className="w-12 h-12 shrink-0 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center">
+                          <Icons.Utensils size={25}/>
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-extrabold text-lg truncate">{p.nome||'Sem nome'}</h3>
+                          <p className="text-resto-subtext text-xs mt-1">{p.categoria||'PRATO_PRINCIPAL'}</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold bg-neutral-800 text-orange-400 px-2 py-1 rounded-full">#{p.id??'—'}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mt-5 text-xs">
+                      <div className="bg-black/30 rounded-lg p-3">
+                        <p className="text-resto-subtext mb-1">Preço</p>
+                        <b>R$ {Number(p.preco||0).toFixed(2)}</b>
+                      </div>
+                      <div className="bg-black/30 rounded-lg p-3">
+                        <p className="text-resto-subtext mb-1">Estoque</p>
+                        <b>{p.quantidadeEstoque??0} un.</b>
+                      </div>
+                      <div className="bg-black/30 rounded-lg p-3">
+                        <p className="text-resto-subtext mb-1">Preparo</p>
+                        <b>{p.tempoPreparo?p.tempoPreparo+' min':'—'}</b>
+                      </div>
+                      <div className="bg-black/30 rounded-lg p-3">
+                        <p className="text-resto-subtext mb-1">Status</p>
+                        <b className={p.disponivel?'text-orange-400':'text-rose-400'}>{p.disponivel?'Disponível':'Indisponível'}</b>
+                      </div>
+                    </div>
+                    {p.ingredientes&&<p className="text-xs text-resto-subtext mt-4 line-clamp-1"><b>Ingredientes:</b> {p.ingredientes}</p>}
+                    {p.descricao&&<p className="text-xs text-resto-subtext mt-1 line-clamp-2">{p.descricao}</p>}
+                  </article>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <section className="max-w-3xl mx-auto">
+            <button onClick={()=>setTela('principal')} className="text-resto-subtext hover:text-white text-sm mb-5">← Voltar para a lista</button>
+            <div className="bg-resto-card border border-resto-border rounded-2xl p-6 md:p-8 space-y-5">
+              <h1 className="text-2xl font-extrabold">Cadastrar Novo Prato (POST)</h1>
+              <form onSubmit={salvarPrato} className="space-y-4">
+                <div>
+                  <label className={label}>Nome do Prato *</label>
+                  <input required value={formPrato.nome} onChange={e=>setFormPrato({...formPrato,nome:e.target.value})} placeholder="Ex.: Filé Mignon ao Molho Madeira" className={field}/>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={label}>Categoria *</label>
+                    <select required value={formPrato.categoria} onChange={e=>setFormPrato({...formPrato,categoria:e.target.value})} className={field}>
+                      <option value="ENTRADA">Entrada</option>
+                      <option value="PRATO_PRINCIPAL">Prato Principal</option>
+                      <option value="SOBREMESA">Sobremesa</option>
+                      <option value="BEBIDA">Bebida</option>
+                      <option value="ACOMPANHAMENTO">Acompanhamento</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={label}>Preço (R$) *</label>
+                    <input required type="number" step="0.01" min="0" value={formPrato.preco} onChange={e=>setFormPrato({...formPrato,preco:e.target.value})} placeholder="Ex.: 45.90" className={field}/>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={label}>Quantidade em Estoque *</label>
+                    <input required type="number" min="0" value={formPrato.quantidadeEstoque} onChange={e=>setFormPrato({...formPrato,quantidadeEstoque:e.target.value})} placeholder="Ex.: 30" className={field}/>
+                  </div>
+                  <div>
+                    <label className={label}>Tempo de Preparo (min)</label>
+                    <input type="number" min="0" value={formPrato.tempoPreparo} onChange={e=>setFormPrato({...formPrato,tempoPreparo:e.target.value})} placeholder="Ex.: 25" className={field}/>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4">
+                  <label className="flex items-center gap-3 bg-neutral-900 border border-resto-border rounded-lg px-4 py-3 cursor-pointer">
+                    <input type="checkbox" checked={formPrato.disponivel} onChange={e=>setFormPrato({...formPrato,disponivel:e.target.checked})} className="w-4 h-4 accent-orange-500"/>
+                    <span><b className="block text-sm">Disponível no menu</b><small className="text-resto-subtext">Marque se o prato já pode ser pedido</small></span>
+                  </label>
+                </div>
+                <div>
+                  <label className={label}>Ingredientes</label>
+                  <input value={formPrato.ingredientes||''} onChange={e=>setFormPrato({...formPrato,ingredientes:e.target.value})} placeholder="Ex.: Carne, molho, batata" className={field}/>
+                </div>
+                <div>
+                  <label className={label}>Descrição</label>
+                  <textarea value={formPrato.descricao||''} onChange={e=>setFormPrato({...formPrato,descricao:e.target.value})} placeholder="Descrição detalhada do prato..." className={field} rows="3"></textarea>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={()=>setTela('principal')} className="flex-1 py-3 border border-resto-border text-white font-bold rounded-full">
+                    Cancelar
+                  </button>
+                  <button type="submit" className="flex-1 py-3 bg-orange-500 text-black font-extrabold rounded-full">
+                    Cadastrar Prato (POST)
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+        )}
+      </div>
+    </main>
+
+    {showConfig&&<div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="modal max-w-lg w-full p-6 rounded-2xl space-y-5"><div className="flex justify-between items-center"><h3 className="font-extrabold">Configurar URL da API</h3><button onClick={()=>setShowConfig(false)} className="text-resto-subtext text-xl">×</button></div><p className="text-resto-subtext text-sm">Informe o endpoint base para o GET e POST de pratos.</p><div><label className={label}>URL da API</label><input value={urlEdit} onChange={e=>setUrlEdit(e.target.value)} placeholder="http://localhost:8080/api/pratos" className={field}/></div><div className="flex gap-3"><button onClick={()=>setShowConfig(false)} className="flex-1 py-3 rounded-full border border-resto-border font-bold text-sm">Cancelar</button><button onClick={()=>{if(urlEdit.trim()){setApiUrl(urlEdit.trim().replace(/\/$/,''));setShowConfig(false)}}} className="flex-1 py-3 rounded-full bg-orange-500 text-black font-extrabold text-sm">Salvar</button></div></div></div>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
+```
+
+### Alterações efetuadas:
+1. **Remoção de PUT e DELETE:** Removidos os botões de **Editar** e **Excluir** dos cards do cardápio, assim como os modais de confirmação.
+2. **Foco nos Métodos Ativos:**
+   - **GET (`http://localhost:8080/api/pratos`):** Busca e exibe a lista dos pratos existentes.
+   - **POST (`http://localhost:8080/api/pratos`):** Envia o formulário com os dados do prato para criar um novo registro no banco de dados.
